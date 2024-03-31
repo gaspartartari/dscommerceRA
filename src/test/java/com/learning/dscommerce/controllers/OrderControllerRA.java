@@ -5,19 +5,26 @@ import static io.restassured.matcher.RestAssuredMatchers.*;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.isNotNull;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
+import org.assertj.core.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.learning.TokenUtil;
 
 import io.restassured.http.ContentType;
+import net.minidev.json.JSONObject;
 
 public class OrderControllerRA {
 
     private String adminUsername, clientUsername, adminPassword, clientPassword;
     private String adminToken, clientToken, invalidToken;
     private Long existingId, nonExistingId, otherId;
+    private Map<String, Object> order;
 
     @BeforeEach
     public void setup() {
@@ -30,7 +37,83 @@ public class OrderControllerRA {
         adminToken = TokenUtil.obtainAccessToken(adminUsername, adminPassword);
         clientToken = TokenUtil.obtainAccessToken(clientUsername, clientPassword);
         invalidToken = adminToken + "asda"; // generates invalid token
+        order = new HashMap<>();
+        List<Map<String, Object>> items = new ArrayList<>();
+        Map<String, Object> item1 = Map.of("productId", 5, "quantity", 1);
+        Map<String, Object> item2 = Map.of("productId", 6, "quantity", 4);
+        items.addAll(List.of(item1, item2));
+        order.put("items", items);
+        
     }
+
+    // Inserção de pedido insere pedido com dados válidos quando logado como cliente
+    @Test
+    public void insertShouldInsertOrderWhenValidDataAndClientLogged(){
+        JSONObject json = new JSONObject(order);
+        given()
+            .header("Content-type", "application/json")
+            .header("Authorization", "Bearer " + clientToken)
+            .body(json)
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+        .when()
+            .post("/orders")
+        .then()
+            .statusCode(201);
+    }
+
+    // Inserção de pedido retorna 422 e mensagem customizadas com dados inválidos quando logado como cliente (ter pelo menos um item)
+    @Test
+    public void insertShouldReturnUnprocessableEntityWhenZeroItemsAndClientLogged(){
+        order.remove("items");
+        JSONObject json = new JSONObject(order);
+        given()
+            .header("Content-type", "application/json")
+            .header("Authorization", "Bearer " + clientToken)
+            .body(json)
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+        .when()
+            .post("/orders")
+        .then()
+            .statusCode(422)
+            .body("error", equalTo("Invalid data"))
+            .body("errors.fieldName", hasItem("items"))
+            .body("errors.message", hasItem("There must be at least one item"));
+    }
+
+    // Inserção de pedido retorna 401 quando não logado como admin ou cliente
+    @Test
+    public void insertShouldReturnUnauthorizedWhenNoUserLogged(){
+        JSONObject json = new JSONObject(order);
+        given()
+            .header("Content-type", "application/json")
+            .header("Authorization", "Bearer " + invalidToken)
+            .body(json)
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+        .when()
+            .post("/orders")
+        .then()
+            .statusCode(401);
+    }
+
+    // Inserção de pedido retorna 403 quando logado como admin
+    @Test
+    public void insertShouldReturnForbiddenWhenAdminLogged(){
+        JSONObject json = new JSONObject(order);
+        given()
+            .header("Content-type", "application/json")
+            .header("Authorization", "Bearer " + adminToken)
+            .body(json)
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+        .when()
+            .post("/orders")
+        .then()
+            .statusCode(403);
+    }
+
 
     // Busca de pedido por id retorna pedido existente quando logado como admin
     @Test
